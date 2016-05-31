@@ -1,0 +1,7 @@
+{
+  "jira": {
+    "endpoint": "https://yoursite.atlassian.net",
+    "user": "your_username",
+    "password": "your_password"
+  }
+}

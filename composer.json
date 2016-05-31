@@ -1,0 +1,33 @@
+{
+    "name": "jpastoor/jira-worklog-extractor",
+    "description": "Helper to extract worklog entries from JIRA using their REST API",
+    "keywords": ["jira","rest","api","worklog"],
+    "type": "library",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Joost Pastoor",
+            "homepage": "https://www.joostpastoor.nl",
+            "email": "jopast@gmail.com"
+        }
+    ],
+    "require": {
+        "php": ">=5.5.0",
+        "chobie/jira-api-restclient": "dev-master@dev",
+        "symfony/console": "^3.1",
+        "monolog/monolog": "^1.19"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "5.3.*"
+    },
+    "autoload": {
+        "psr-4" : {
+            "Jpastoor\\JiraWorklogExtractor\\" : "src"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Tests\\Jpastoor\\JiraWorklogExtractor\\": "tests"
+        }
+    }
+}
