@@ -64,8 +64,6 @@ class LoadProjectTotalsInTimeperiodCommand extends Command
 
         $config = json_decode(file_get_contents($input->getOption("config_file")));
 
-        var_dump(file_get_contents($input->getOption("config_file")));
-
         $jira = new Api($config->jira->endpoint, new Api\Authentication\Basic($config->jira->user, $config->jira->password));
 
         $progress = null;
