@@ -14,10 +14,10 @@ use Symfony\Component\Console\Output\OutputInterface;
  * Class WorkedHoursPerDayCommand
  *
  * Days on the rows
- * - columns: labels/persons?
- * - tabs: labels/persons?
+ * - columns: labels/authors?
+ * - tabs: labels/authors?
  * - labels-whitelist:
- * - persons-whitelist
+ * - authors-whitelist
  *
  * @package Jpastoor\JiraWorklogExtractor
  * @author Joost Pastoor <joost.pastoor@munisense.com>
@@ -47,9 +47,9 @@ class WorkedHoursPerDayCommand extends Command
                 InputArgument::REQUIRED,
                 'Path to Excel file'
             )->addOption(
-                'persons-whitelist', null,
+                'authors-whitelist', null,
                 InputArgument::OPTIONAL,
-                'Whitelist of persons (comma separated)'
+                'Whitelist of authors (comma separated)'
             )->addOption(
                 'labels-whitelist', null,
                 InputArgument::OPTIONAL,
@@ -87,8 +87,13 @@ class WorkedHoursPerDayCommand extends Command
 
         do {
 
-            $search_result = $jira->search("created <= " . $end_time . " and updated >= " . $start_time . " and timespent > 0", $offset, self::MAX_ISSUES_PER_QUERY, "key,project");
+            $jql = "worklogDate <= " . $end_time . " and worklogDate >= " . $start_time . " and timespent > 0";
 
+            if($input->hasOption("labels-whitelist")) {
+                $jql .= " and labels in (".$input->getOption("labels-whitelist").")";
+            }
+
+            $search_result = $jira->search($jql, $offset, self::MAX_ISSUES_PER_QUERY, "key,project,labels");
 
             if ($progress == null) {
                 /** @var ProgressBar $progress */
@@ -99,6 +104,9 @@ class WorkedHoursPerDayCommand extends Command
             // For each issue in the result, fetch the full worklog
             $issues = $search_result->getIssues();
             foreach ($issues as $issue) {
+
+                $labels = $issue->getFields()["Labels"];
+
                 $worklog_result = $jira->getWorklogs($issue->getKey(), []);
 
                 $worklog_array = $worklog_result->getResult();
@@ -113,7 +121,9 @@ class WorkedHoursPerDayCommand extends Command
                             continue;
                         }
 
-                        @$worked_time[$issue->getProject()["key"]][$entry["author"]["key"]] += $entry["timeSpentSeconds"];
+                        foreach($labels as $label) {
+                            @$worked_time[$label][$entry["author"]["key"]][$worklog_date->format("Y-m-d")] += $entry["timeSpentSeconds"];
+                        }
                     }
                 }
                 $progress->advance();
@@ -125,44 +135,48 @@ class WorkedHoursPerDayCommand extends Command
         $progress->finish();
         $progress->clear();
 
-        // List all projects
-        $projects = array_keys($worked_time);
 
-        // List all authors
-        $authors = [];
-        foreach ($worked_time as $worked_time_per_project) {
-            $authors = array_unique(array_merge($authors, array_keys($worked_time_per_project)));
-        }
+        var_dump($worked_time);
+//
+//        // List all projects
+//        $projects = array_keys($worked_time);
+//
+//        // List all authors
+//        $authors = [];
+//        foreach ($worked_time as $worked_time_per_project) {
+//            $authors = array_unique(array_merge($authors, array_keys($worked_time_per_project)));
+//        }
+//
+//        $output->writeln("");
+//
+//        $output_lines[] = "project;" . implode(";", $authors);
+//
+//        foreach ($projects as $project) {
+//
+//
+//            $hours_per_author = [];
+//            foreach ($authors as $author) {
+//                $hours_per_author[$author] = isset($worked_time[$project][$author]) ? round($worked_time[$project][$author] / 60 / 60) : 0;
+//            }
+//
+//            $output_lines[] = $project . ";" . implode(";", $hours_per_author);
+//        }
+//
+//
+//        if ($input->getOption("output_file")) {
+//            $output_file = $input->getOption("output_file");
+//
+//            if (file_put_contents($output_file, implode(PHP_EOL, $output_lines))) {
+//                $output->writeln("<info>Output written to " . $output_file . "</info>");
+//            } else {
+//                $output->writeln("<error>Could not write to " . $output_file . "</error>");
+//            }
+//        } else {
+//            // Default output mode to console
+//            foreach ($output_lines as $output_line) {
+//                $output->writeln($output_line);
+//            }
+//        }
 
-        $output->writeln("");
-
-        $output_lines[] = "project;" . implode(";", $authors);
-
-        foreach ($projects as $project) {
-
-
-            $hours_per_author = [];
-            foreach ($authors as $author) {
-                $hours_per_author[$author] = isset($worked_time[$project][$author]) ? round($worked_time[$project][$author] / 60 / 60) : 0;
-            }
-
-            $output_lines[] = $project . ";" . implode(";", $hours_per_author);
-        }
-
-
-        if ($input->getOption("output_file")) {
-            $output_file = $input->getOption("output_file");
-
-            if (file_put_contents($output_file, implode(PHP_EOL, $output_lines))) {
-                $output->writeln("<info>Output written to " . $output_file . "</info>");
-            } else {
-                $output->writeln("<error>Could not write to " . $output_file . "</error>");
-            }
-        } else {
-            // Default output mode to console
-            foreach ($output_lines as $output_line) {
-                $output->writeln($output_line);
-            }
-        }
     }
 }
