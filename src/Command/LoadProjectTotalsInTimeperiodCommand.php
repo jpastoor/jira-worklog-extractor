@@ -73,8 +73,7 @@ class LoadProjectTotalsInTimeperiodCommand extends Command
 
         do {
 
-            $search_result = $jira->search("created <= " . $end_time . " and updated >= " . $start_time . " and timespent > 0", $offset, self::MAX_ISSUES_PER_QUERY, "key,project");
-
+            $search_result = $jira->search("worklogDate <= " . $end_time . " and worklogDate >= " . $start_time . " and timespent > 0", $offset, self::MAX_ISSUES_PER_QUERY, "key,project");
 
             if ($progress == null) {
                 /** @var ProgressBar $progress */
