@@ -8,16 +8,16 @@ use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Helper\ProgressBar;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
+use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
+use XLSXWriter;
 
 /**
  * Class WorkedHoursPerDayCommand
  *
  * Days on the rows
- * - columns: labels/authors?
- * - tabs: labels/authors?
- * - labels-whitelist:
- * - authors-whitelist
+ * - columns: authors
+ * - tabs: labels
  *
  * @package Jpastoor\JiraWorklogExtractor
  * @author Joost Pastoor <joost.pastoor@munisense.com>
@@ -44,19 +44,20 @@ class WorkedHoursPerDayCommand extends Command
                 date("Y-m-d")
             )->addOption(
                 'output_file', null,
-                InputArgument::REQUIRED,
-                'Path to Excel file'
+                InputOption::VALUE_REQUIRED,
+                'Path to Excel file',
+                "output.xlsx"
             )->addOption(
                 'authors-whitelist', null,
-                InputArgument::OPTIONAL,
+                InputOption::VALUE_OPTIONAL,
                 'Whitelist of authors (comma separated)'
             )->addOption(
                 'labels-whitelist', null,
-                InputArgument::OPTIONAL,
+                InputOption::VALUE_OPTIONAL,
                 'Whitelist of labels (comma separated)'
             )->addOption(
                 'config_file', null,
-                InputArgument::OPTIONAL,
+                InputOption::VALUE_OPTIONAL,
                 'Path to config file',
                 __DIR__ . "/../../config.json"
             );
@@ -89,8 +90,12 @@ class WorkedHoursPerDayCommand extends Command
 
             $jql = "worklogDate <= " . $end_time . " and worklogDate >= " . $start_time . " and timespent > 0";
 
-            if($input->hasOption("labels-whitelist")) {
-                $jql .= " and labels in (".$input->getOption("labels-whitelist").")";
+            if ($input->getOption("labels-whitelist")) {
+                $jql .= " and labels in (" . $input->getOption("labels-whitelist") . ")";
+            }
+
+            if ($input->getOption("authors-whitelist")) {
+                $jql .= " and worklogAuthor in (" . $input->getOption("authors-whitelist") . ")";
             }
 
             $search_result = $jira->search($jql, $offset, self::MAX_ISSUES_PER_QUERY, "key,project,labels");
@@ -112,6 +117,15 @@ class WorkedHoursPerDayCommand extends Command
                 $worklog_array = $worklog_result->getResult();
                 if (isset($worklog_array["worklogs"]) && !empty($worklog_array["worklogs"])) {
                     foreach ($worklog_array["worklogs"] as $entry) {
+                        $author = $entry["author"]["key"];
+
+                        // Filter on author
+                        if ($input->getOption("authors-whitelist")) {
+                            $authors_whitelist = explode(",", $input->getOption("authors-whitelist"));
+                            if (!in_array($author, $authors_whitelist)) {
+                                continue;
+                            }
+                        }
 
                         // Filter on time
                         $worklog_date = \DateTime::createFromFormat("Y-m-d", substr($entry['started'], 0, 10));
@@ -121,8 +135,8 @@ class WorkedHoursPerDayCommand extends Command
                             continue;
                         }
 
-                        foreach($labels as $label) {
-                            @$worked_time[$label][$entry["author"]["key"]][$worklog_date->format("Y-m-d")] += $entry["timeSpentSeconds"];
+                        foreach ($labels as $label) {
+                            @$worked_time[$label][$author][$worklog_date->format("Y-m-d")] += $entry["timeSpentSeconds"] / 60;
                         }
                     }
                 }
@@ -135,48 +149,49 @@ class WorkedHoursPerDayCommand extends Command
         $progress->finish();
         $progress->clear();
 
+        if (empty($worked_time)) {
+            throw new \Exception("No matching issues found");
+        }
 
-        var_dump($worked_time);
-//
-//        // List all projects
-//        $projects = array_keys($worked_time);
-//
-//        // List all authors
-//        $authors = [];
-//        foreach ($worked_time as $worked_time_per_project) {
-//            $authors = array_unique(array_merge($authors, array_keys($worked_time_per_project)));
-//        }
-//
-//        $output->writeln("");
-//
-//        $output_lines[] = "project;" . implode(";", $authors);
-//
-//        foreach ($projects as $project) {
-//
-//
-//            $hours_per_author = [];
-//            foreach ($authors as $author) {
-//                $hours_per_author[$author] = isset($worked_time[$project][$author]) ? round($worked_time[$project][$author] / 60 / 60) : 0;
-//            }
-//
-//            $output_lines[] = $project . ";" . implode(";", $hours_per_author);
-//        }
-//
-//
-//        if ($input->getOption("output_file")) {
-//            $output_file = $input->getOption("output_file");
-//
-//            if (file_put_contents($output_file, implode(PHP_EOL, $output_lines))) {
-//                $output->writeln("<info>Output written to " . $output_file . "</info>");
-//            } else {
-//                $output->writeln("<error>Could not write to " . $output_file . "</error>");
-//            }
-//        } else {
-//            // Default output mode to console
-//            foreach ($output_lines as $output_line) {
-//                $output->writeln($output_line);
-//            }
-//        }
+        $writer = new XLSXWriter();
+        $writer->setAuthor("Munisense BV");
 
+
+        foreach ($worked_time as $label => $worked_time_label) {
+            list($sheet_headers, $sheet_data_by_date) = $this->convertWorkedTimeOfLabelToSheetFormat($worked_time_label);
+            $writer->writeSheet(array_values($sheet_data_by_date), $label, $sheet_headers);
+        }
+
+        $writer->writeToFile($input->getOption("output_file"));
+    }
+
+    /**
+     * @param $worked_time_label
+     *
+     * @return array
+     */
+    protected function convertWorkedTimeOfLabelToSheetFormat($worked_time_label)
+    {
+        // Find unique authors per label
+        $unique_authors = array_keys($worked_time_label);
+        $sheet_headers = ["Date" => "date"];
+        foreach ($unique_authors as $unique_author) {
+            $sheet_headers[$unique_author] = "integer";
+        }
+        $unique_authors_map = array_flip($unique_authors);
+
+
+        $sheet_data_by_date = [];
+        foreach ($worked_time_label as $author => $worked_time_days_of_author) {
+            foreach ($worked_time_days_of_author as $date => $value) {
+                if (!isset($sheet_data_by_date[$date])) {
+                    $sheet_data_by_date[$date] = array_merge([$date], array_fill(1, count($unique_authors), 0));
+                }
+
+                $sheet_data_by_date[$date][$unique_authors_map[$author] + 1] += $value;
+            }
+        }
+
+        return [$sheet_headers, $sheet_data_by_date];
     }
 }
