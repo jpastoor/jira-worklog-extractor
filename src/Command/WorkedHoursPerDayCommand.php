@@ -51,7 +51,7 @@ class WorkedHoursPerDayCommand extends Command
                 'output_file', null,
                 InputOption::VALUE_REQUIRED,
                 'Path to Excel file',
-                "output.xlsx"
+                __DIR__ . "/../../output/output_" . date("YmdHis") . ".xlsx"
             )->addOption(
                 'authors-whitelist', null,
                 InputOption::VALUE_OPTIONAL,
@@ -95,7 +95,7 @@ class WorkedHoursPerDayCommand extends Command
             $cached_client
         );
 
-        if($input->getOption("clear_cache")) {
+        if ($input->getOption("clear_cache")) {
             $cached_client->clear();
         }
 
