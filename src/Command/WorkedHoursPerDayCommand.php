@@ -4,6 +4,7 @@
 namespace Jpastoor\JiraWorklogExtractor\Command;
 
 use chobie\Jira\Api;
+use Jpastoor\JiraWorklogExtractor\CachedHttpClient;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Helper\ProgressBar;
 use Symfony\Component\Console\Input\InputArgument;
@@ -43,6 +44,10 @@ class WorkedHoursPerDayCommand extends Command
                 'End time to load the worklog totals (YYYY-mm-dd)',
                 date("Y-m-d")
             )->addOption(
+                'clear_cache', "c",
+                InputOption::VALUE_NONE,
+                'Whether or not to clear the cache before starting'
+            )->addOption(
                 'output_file', null,
                 InputOption::VALUE_REQUIRED,
                 'Path to Excel file',
@@ -55,6 +60,10 @@ class WorkedHoursPerDayCommand extends Command
                 'labels-whitelist', null,
                 InputOption::VALUE_OPTIONAL,
                 'Whitelist of labels (comma separated)'
+            )->addOption(
+                'labels-blacklist', null,
+                InputOption::VALUE_OPTIONAL,
+                'Blacklist of labels (comma separated)'
             )->addOption(
                 'config_file', null,
                 InputOption::VALUE_OPTIONAL,
@@ -79,7 +88,16 @@ class WorkedHoursPerDayCommand extends Command
 
         $config = json_decode(file_get_contents($input->getOption("config_file")));
 
-        $jira = new Api($config->jira->endpoint, new Api\Authentication\Basic($config->jira->user, $config->jira->password));
+        $cached_client = new CachedHttpClient(new Api\Client\CurlClient());
+        $jira = new Api(
+            $config->jira->endpoint,
+            new Api\Authentication\Basic($config->jira->user, $config->jira->password),
+            $cached_client
+        );
+
+        if($input->getOption("clear_cache")) {
+            $cached_client->clear();
+        }
 
         $progress = null;
         $offset = 0;
@@ -92,6 +110,11 @@ class WorkedHoursPerDayCommand extends Command
 
             if ($input->getOption("labels-whitelist")) {
                 $jql .= " and labels in (" . $input->getOption("labels-whitelist") . ")";
+                $labels_whitelist = explode(",", $input->getOption("labels-whitelist"));
+            }
+
+            if ($input->getOption("labels-blacklist")) {
+                $jql .= " and labels not in (" . $input->getOption("labels-blacklist") . ")";
             }
 
             if ($input->getOption("authors-whitelist")) {
@@ -111,6 +134,9 @@ class WorkedHoursPerDayCommand extends Command
             foreach ($issues as $issue) {
 
                 $labels = $issue->getFields()["Labels"];
+                if (isset($labels_whitelist)) {
+                    $labels = array_intersect($labels, $labels_whitelist);
+                }
 
                 $worklog_result = $jira->getWorklogs($issue->getKey(), []);
 
@@ -155,7 +181,6 @@ class WorkedHoursPerDayCommand extends Command
 
         $writer = new XLSXWriter();
         $writer->setAuthor("Munisense BV");
-
 
         foreach ($worked_time as $label => $worked_time_label) {
             list($sheet_headers, $sheet_data_by_date) = $this->convertWorkedTimeOfLabelToSheetFormat($worked_time_label);
