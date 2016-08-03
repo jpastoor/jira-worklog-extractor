@@ -48,7 +48,7 @@ class WorkedHoursPerDayCommand extends Command
                 InputOption::VALUE_NONE,
                 'Whether or not to clear the cache before starting'
             )->addOption(
-                'output_file', null,
+                'output-file', "o",
                 InputOption::VALUE_REQUIRED,
                 'Path to Excel file',
                 __DIR__ . "/../../output/output_" . date("YmdHis") . ".xlsx"
@@ -65,7 +65,7 @@ class WorkedHoursPerDayCommand extends Command
                 InputOption::VALUE_OPTIONAL,
                 'Blacklist of labels (comma separated)'
             )->addOption(
-                'config_file', null,
+                'config-file', null,
                 InputOption::VALUE_OPTIONAL,
                 'Path to config file',
                 __DIR__ . "/../../config.json"
@@ -81,12 +81,12 @@ class WorkedHoursPerDayCommand extends Command
         $start_timestamp = mktime(0, 0, 0, $start_time_obj->format("m"), $start_time_obj->format("d"), $start_time_obj->format("Y"));
         $end_timestamp = mktime(23, 59, 59, $end_time_obj->format("m"), $end_time_obj->format("d"), $end_time_obj->format("Y"));
 
-        if (!file_exists($input->getOption("config_file"))) {
-            $output->writeln("<error>Could not find config file at " . $input->getOption("config_file") . "</error>");
+        if (!file_exists($input->getOption("config-file"))) {
+            $output->writeln("<error>Could not find config file at " . $input->getOption("config-file") . "</error>");
             die();
         }
 
-        $config = json_decode(file_get_contents($input->getOption("config_file")));
+        $config = json_decode(file_get_contents($input->getOption("config-file")));
 
         $cached_client = new CachedHttpClient(new Api\Client\CurlClient());
         $jira = new Api(
@@ -106,7 +106,7 @@ class WorkedHoursPerDayCommand extends Command
 
         do {
 
-            $jql = "worklogDate <= " . $end_time . " and worklogDate >= " . $start_time . " and timespent > 0";
+            $jql = "worklogDate <= " . $end_time . " and worklogDate >= " . $start_time . " and timespent > 0  and timeSpent < " . rand(1000000, 9000000) . " ";
 
             if ($input->getOption("labels-whitelist")) {
                 $jql .= " and labels in (" . $input->getOption("labels-whitelist") . ")";
@@ -136,6 +136,10 @@ class WorkedHoursPerDayCommand extends Command
                 $labels = $issue->getFields()["Labels"];
                 if (isset($labels_whitelist)) {
                     $labels = array_intersect($labels, $labels_whitelist);
+                }
+
+                if (count($labels) > 1) {
+                    $output->write("<error>" . $issue . " has multiple labels: " . implode(", ", $labels) . "</error>");
                 }
 
                 $worklog_result = $jira->getWorklogs($issue->getKey(), []);
@@ -182,12 +186,28 @@ class WorkedHoursPerDayCommand extends Command
         $writer = new XLSXWriter();
         $writer->setAuthor("Munisense BV");
 
+        ksort($worked_time);
+
         foreach ($worked_time as $label => $worked_time_label) {
+
+            ksort($worked_time_label);
+
             list($sheet_headers, $sheet_data_by_date) = $this->convertWorkedTimeOfLabelToSheetFormat($worked_time_label);
-            $writer->writeSheet(array_values($sheet_data_by_date), $label, $sheet_headers);
+
+            $writer->writeSheetHeader($label, $sheet_headers);
+
+            $totals_row = [""];
+            for ($i = 1; $i < count($sheet_headers); $i++) {
+                $totals_row[] = "=ROUND(SUM(" . XLSXWriter::xlsCell(2, $i) . ":" . XLSXWriter::xlsCell(10000, $i) . ")/60,0)";
+            }
+            $writer->writeSheetRow($label, $totals_row);
+
+            foreach ($sheet_data_by_date as $row) {
+                $writer->writeSheetRow($label, $row);
+            }
         }
 
-        $writer->writeToFile($input->getOption("output_file"));
+        $writer->writeToFile($input->getOption("output-file"));
     }
 
     /**
@@ -205,7 +225,6 @@ class WorkedHoursPerDayCommand extends Command
         }
         $unique_authors_map = array_flip($unique_authors);
 
-
         $sheet_data_by_date = [];
         foreach ($worked_time_label as $author => $worked_time_days_of_author) {
             foreach ($worked_time_days_of_author as $date => $value) {
@@ -216,6 +235,8 @@ class WorkedHoursPerDayCommand extends Command
                 $sheet_data_by_date[$date][$unique_authors_map[$author] + 1] += $value;
             }
         }
+
+        ksort($sheet_data_by_date);
 
         return [$sheet_headers, $sheet_data_by_date];
     }
