@@ -1,5 +1,6 @@
 <?php
 
+
 namespace Jpastoor\JiraWorklogExtractor\Command;
 
 use chobie\Jira\Api;
@@ -13,25 +14,24 @@ use Symfony\Component\Console\Output\OutputInterface;
 use XLSXWriter;
 
 /**
- * Class WorkedHoursPerDayCommand
+ * Class WorkedHoursPerTicketPerAuthorCommand
  *
  * Days on the rows
  * - columns: authors
- * - tabs: labels
  *
  * @package Jpastoor\JiraWorklogExtractor
  * @author Joost Pastoor <joost.pastoor@munisense.com>
  * @copyright Copyright (c) 2016, Munisense BV
  */
-class WorkedHoursPerDayCommand extends Command
+class WorkedHoursPerTicketPerAuthorCommand extends Command
 {
     const MAX_ISSUES_PER_QUERY = 100;
 
     protected function configure()
     {
         $this
-            ->setName('worked-hours-per-day')
-            ->setDescription('Days on the rows, labels on the columns and different tabs per person')
+            ->setName('worked-hours-per-ticket-per-author')
+            ->setDescription('Tickets on the rows, persons on the columns, worked hours in the cells')
             ->addArgument(
                 'start_time',
                 InputArgument::REQUIRED,
@@ -59,10 +59,6 @@ class WorkedHoursPerDayCommand extends Command
                 'labels-whitelist', null,
                 InputOption::VALUE_OPTIONAL,
                 'Whitelist of labels (comma separated)'
-            )->addOption(
-                'labels-blacklist', null,
-                InputOption::VALUE_OPTIONAL,
-                'Blacklist of labels (comma separated)'
             )->addOption(
                 'config-file', null,
                 InputOption::VALUE_OPTIONAL,
@@ -102,6 +98,8 @@ class WorkedHoursPerDayCommand extends Command
         $offset = 0;
 
         $worked_time = [];
+        $issue_descriptions = [];
+        $issue_labels = [];
 
         do {
 
@@ -109,18 +107,13 @@ class WorkedHoursPerDayCommand extends Command
 
             if ($input->getOption("labels-whitelist")) {
                 $jql .= " and labels in (" . $input->getOption("labels-whitelist") . ")";
-                $labels_whitelist = explode(",", $input->getOption("labels-whitelist"));
-            }
-
-            if ($input->getOption("labels-blacklist")) {
-                $jql .= " and labels not in (" . $input->getOption("labels-blacklist") . ")";
             }
 
             if ($input->getOption("authors-whitelist")) {
                 $jql .= " and worklogAuthor in (" . $input->getOption("authors-whitelist") . ")";
             }
 
-            $search_result = $jira->search($jql, $offset, self::MAX_ISSUES_PER_QUERY, "key,project,labels");
+            $search_result = $jira->search($jql, $offset, self::MAX_ISSUES_PER_QUERY, "key,project,labels,summary");
 
             if ($progress == null) {
                 /** @var ProgressBar $progress */
@@ -130,18 +123,14 @@ class WorkedHoursPerDayCommand extends Command
 
             // For each issue in the result, fetch the full worklog
             $issues = $search_result->getIssues();
+
             foreach ($issues as $issue) {
 
-                $labels = $issue->getFields()["Labels"];
-                if (isset($labels_whitelist)) {
-                    $labels = array_intersect($labels, $labels_whitelist);
-                }
+                $issue_key = $issue->getKey();
+                $issue_descriptions[$issue_key] = $issue->getSummary();
+                $issue_labels[$issue_key] = implode(",", $issue->getLabels());
 
-                if (count($labels) > 1) {
-                    $output->write("<error>" . $issue . " has multiple labels: " . implode(", ", $labels) . "</error>");
-                }
-
-                $worklog_result = $jira->getWorklogs($issue->getKey(), []);
+                $worklog_result = $jira->getWorklogs($issue_key, []);
 
                 $worklog_array = $worklog_result->getResult();
                 if (isset($worklog_array["worklogs"]) && !empty($worklog_array["worklogs"])) {
@@ -164,9 +153,7 @@ class WorkedHoursPerDayCommand extends Command
                             continue;
                         }
 
-                        foreach ($labels as $label) {
-                            @$worked_time[$label][$author][$worklog_date->format("Y-m-d")] += $entry["timeSpentSeconds"] / 60;
-                        }
+                        @$worked_time[$author][$issue_key] += $entry["timeSpentSeconds"] / 60;
                     }
                 }
                 $progress->advance();
@@ -187,24 +174,20 @@ class WorkedHoursPerDayCommand extends Command
 
         ksort($worked_time);
 
-        foreach ($worked_time as $label => $worked_time_label) {
+        list($sheet_headers, $sheet_data_by_date) = $this->convertWorkedTimeOfLabelToSheetFormat($worked_time, $issue_descriptions, $issue_labels);
 
-            ksort($worked_time_label);
+        $writer->writeSheetHeader("sheet1", $sheet_headers);
 
-            list($sheet_headers, $sheet_data_by_date) = $this->convertWorkedTimeOfLabelToSheetFormat($worked_time_label);
-
-            $writer->writeSheetHeader($label, $sheet_headers);
-
-            $totals_row = [""];
-            for ($i = 1; $i < count($sheet_headers); $i++) {
-                $totals_row[] = "=ROUND(SUM(" . XLSXWriter::xlsCell(2, $i) . ":" . XLSXWriter::xlsCell(10000, $i) . ")/60,0)";
-            }
-            $writer->writeSheetRow($label, $totals_row);
-
-            foreach ($sheet_data_by_date as $row) {
-                $writer->writeSheetRow($label, $row);
-            }
+        $totals_row = [""];
+        for ($i = 1, $iMax = count($sheet_headers); $i < $iMax; $i++) {
+            $totals_row[] = "=ROUND(SUM(" . XLSXWriter::xlsCell(2, $i) . ":" . XLSXWriter::xlsCell(10000, $i) . ")/60,0)";
         }
+        $writer->writeSheetRow("sheet1", $totals_row);
+
+        foreach ($sheet_data_by_date as $row) {
+            $writer->writeSheetRow("sheet1", $row);
+        }
+
 
         $writer->writeToFile($input->getOption("output-file"));
     }
@@ -214,11 +197,11 @@ class WorkedHoursPerDayCommand extends Command
      *
      * @return array
      */
-    protected function convertWorkedTimeOfLabelToSheetFormat($worked_time_label)
+    protected function convertWorkedTimeOfLabelToSheetFormat($worked_time_label, $issue_descriptions, $issue_labels)
     {
         // Find unique authors per label
         $unique_authors = array_keys($worked_time_label);
-        $sheet_headers = ["Date" => "date"];
+        $sheet_headers = ["Ticket" => "string", "Description" => "string", "Labels" => "string"];
         foreach ($unique_authors as $unique_author) {
             $sheet_headers[$unique_author] = "integer";
         }
@@ -226,12 +209,12 @@ class WorkedHoursPerDayCommand extends Command
 
         $sheet_data_by_date = [];
         foreach ($worked_time_label as $author => $worked_time_days_of_author) {
-            foreach ($worked_time_days_of_author as $date => $value) {
-                if (!isset($sheet_data_by_date[$date])) {
-                    $sheet_data_by_date[$date] = array_merge([$date], array_fill(1, count($unique_authors), 0));
+            foreach ($worked_time_days_of_author as $issue_key => $value) {
+                if (!isset($sheet_data_by_date[$issue_key])) {
+                    $sheet_data_by_date[$issue_key] = array_merge([$issue_key, $issue_descriptions[$issue_key], $issue_labels[$issue_key]], array_fill(1, count($unique_authors), 0));
                 }
 
-                $sheet_data_by_date[$date][$unique_authors_map[$author] + 1] += $value;
+                $sheet_data_by_date[$issue_key][$unique_authors_map[$author] + 3] += $value;
             }
         }
 
