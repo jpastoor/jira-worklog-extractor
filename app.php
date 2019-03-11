@@ -15,4 +15,5 @@ $application->add(new WorkedHoursPerDayCommand());
 $application->add(new WorkedHoursPerDayPerAuthorCommand());
 $application->add(new \Jpastoor\JiraWorklogExtractor\Command\WorkedHoursPerTicketPerAuthorCommand());
 $application->add(new ClearCacheCommand());
+$application->add(new \Jpastoor\JiraWorklogExtractor\Command\ReworkCommand());
 $application->run();
