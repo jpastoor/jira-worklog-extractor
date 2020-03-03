@@ -1,7 +1,7 @@
 {
   "jira": {
     "endpoint": "https://yoursite.atlassian.net",
-    "user": "your_username",
-    "password": "your_password"
+    "user": "your_emailaddress",
+    "password": "your_api_token"
   }
 }
