@@ -100,6 +100,30 @@ class WorkedHoursPerDayCommand extends Command
             $cached_client->clear();
         }
 
+        // Fetch all users and store them in handy lookup lists
+        $users = $jira->api("GET", '/rest/api/2/users', [
+            "maxResults" => 10000,
+        ]);
+        $display_name_by_account_id = [];
+        $account_id_by_display_name = [];
+        foreach ($users->getResult() as $user) {
+            $display_name_by_account_id[$user["accountId"]] = $user["displayName"];
+            $account_id_by_display_name[$user["displayName"]] = $user["accountId"];
+        }
+
+        // Convert the whitelist if it contains displayNames to only contain accountIds
+        $authors_whitelist = [];
+        if ($input->getOption('authors-whitelist')) {
+            $authors_whitelist = explode(',', $input->getOption('authors-whitelist'));
+            foreach ($authors_whitelist as $i => $elem) {
+                if (array_key_exists($elem, $account_id_by_display_name)) {
+                    $authors_whitelist[$i] = $account_id_by_display_name[$elem];
+                } else if (!array_key_exists($elem, $display_name_by_account_id)) {
+                    throw new Exception("Could not find displayname for user " . $elem);
+                }
+            }
+        }
+
         $progress = null;
         $offset = 0;
 
@@ -118,8 +142,8 @@ class WorkedHoursPerDayCommand extends Command
                 $jql .= ' and labels not in (' . $input->getOption('labels-blacklist') . ')';
             }
 
-            if ($input->getOption('authors-whitelist')) {
-                $jql .= ' and worklogAuthor in (' . $input->getOption('authors-whitelist') . ')';
+            if (!empty($authors_whitelist)) {
+                $jql .= ' and worklogAuthor in (' . implode(',', $authors_whitelist) . ')';
             }
 
             $search_result = $jira->search($jql, $offset, self::MAX_ISSUES_PER_QUERY, 'key,project,labels');
@@ -148,14 +172,12 @@ class WorkedHoursPerDayCommand extends Command
                 $worklog_array = $worklog_result->getResult();
                 if (isset($worklog_array['worklogs']) && !empty($worklog_array['worklogs'])) {
                     foreach ($worklog_array['worklogs'] as $entry) {
-                        $author = $entry['author']['key'];
+                        $author_account_id = $entry['author']['accountId'];
+                        $author_display_name = $display_name_by_account_id[$author_account_id];
 
                         // Filter on author
-                        if ($input->getOption('authors-whitelist')) {
-                            $authors_whitelist = explode(',', $input->getOption('authors-whitelist'));
-                            if (!in_array($author, $authors_whitelist)) {
-                                continue;
-                            }
+                        if (!empty($authors_whitelist) && !in_array($author_account_id, $authors_whitelist, true)) {
+                            continue;
                         }
 
                         // Filter on time
@@ -167,7 +189,7 @@ class WorkedHoursPerDayCommand extends Command
                         }
 
                         foreach ($labels as $label) {
-                            @$worked_time[$label][$author][$worklog_date->format('Y-m-d')] += $entry['timeSpentSeconds'] / 60;
+                            @$worked_time[$label][$author_display_name][$worklog_date->format('Y-m-d')] += $entry['timeSpentSeconds'] / 60;
                         }
                     }
                 }
