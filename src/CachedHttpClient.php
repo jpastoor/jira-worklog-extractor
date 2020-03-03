@@ -4,6 +4,9 @@ namespace Jpastoor\JiraWorklogExtractor;
 
 use chobie\Jira\Api;
 use chobie\Jira\Api\Client\ClientInterface;
+use chobie\Jira\Api\Exception;
+use chobie\Jira\Api\UnauthorizedException;
+use InvalidArgumentException;
 
 /**
  * Class CachedHttpClient
@@ -28,10 +31,10 @@ class CachedHttpClient implements ClientInterface
      * @param ClientInterface $client
      * @param string $cache_dir
      */
-    public function __construct(ClientInterface $client, $cache_dir = null)
+    public function __construct(ClientInterface $client, ?string $cache_dir = null)
     {
-        if ($cache_dir == null) {
-            $cache_dir = __DIR__ . "/../cache/";
+        if ($cache_dir === null) {
+            $cache_dir = __DIR__ . '/../cache/';
         }
 
         $this->cache_dir = $cache_dir;
@@ -51,11 +54,11 @@ class CachedHttpClient implements ClientInterface
      * @param boolean $debug Debug this request.
      *
      * @return array|string
-     * @throws \InvalidArgumentException When non-supported implementation of AuthenticationInterface is given.
-     * @throws \InvalidArgumentException When data is not an array and http method is GET.
-     * @throws \chobie\Jira\Api\Exception When request failed due communication error.
-     * @throws \chobie\Jira\Api\UnauthorizedException When request failed, because user can't be authorized properly.
-     * @throws \chobie\Jira\Api\Exception When there was empty response instead of needed data.
+     * @throws InvalidArgumentException When non-supported implementation of AuthenticationInterface is given.
+     * @throws InvalidArgumentException When data is not an array and http method is GET.
+     * @throws Exception When request failed due communication error.
+     * @throws UnauthorizedException When request failed, because user can't be authorized properly.
+     * @throws Exception When there was empty response instead of needed data.
      */
     public function sendRequest(
         $method,
@@ -65,22 +68,23 @@ class CachedHttpClient implements ClientInterface
         Api\Authentication\AuthenticationInterface $credential,
         $is_file = false,
         $debug = false
-    ) {
+    )
+    {
         // We only do GET methods
-        if ($method == Api::REQUEST_GET) {
-            $cache_id = md5($url) . md5(json_encode($data)) . md5($endpoint) . ".json";
-            $file = $this->cache_dir . "/" . $cache_id;
+        if ($method === Api::REQUEST_GET) {
+            $cache_id = md5($url) . md5(json_encode($data, JSON_THROW_ON_ERROR, 512)) . md5($endpoint) . '.json';
+            $file = $this->cache_dir . '/' . $cache_id;
 
             // When the file does not exist, send request and store the result
             if (!file_exists($file)) {
                 $contents = $this->client->sendRequest($method, $url, $data, $endpoint, $credential, $is_file, $debug);
-                file_put_contents($file, json_encode($contents));
+                file_put_contents($file, json_encode($contents, JSON_THROW_ON_ERROR, 512));
 
                 return $contents;
-            } else {
-                // When the file exists then we have a cache hit, retrieve and return
-                return json_decode(file_get_contents($file));
             }
+
+            // When the file exists then we have a cache hit, retrieve and return
+            return json_decode(file_get_contents($file), false, 512, JSON_THROW_ON_ERROR);
         }
 
         // Non-GET methods get forwarded
@@ -89,13 +93,13 @@ class CachedHttpClient implements ClientInterface
 
     /**
      * Clear the entire cache directory
-     * 
+     *
      * @return int Amount of cache files cleared
      */
-    public function clear()
+    public function clear(): int
     {
         $i = 0;
-        $files = glob($this->cache_dir . "/*"); // get all file names
+        $files = glob($this->cache_dir . '/*'); // get all file names
         foreach ($files as $file) { // iterate files
             if (is_file($file)) {
                 // delete file

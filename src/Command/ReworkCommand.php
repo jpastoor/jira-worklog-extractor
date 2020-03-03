@@ -5,6 +5,8 @@ namespace Jpastoor\JiraWorklogExtractor\Command;
 
 use chobie\Jira\Api;
 use chobie\Jira\Issue;
+use DateTime;
+use Exception;
 use Jpastoor\JiraWorklogExtractor\CachedHttpClient;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Helper\ProgressBar;
@@ -26,9 +28,9 @@ use XLSXWriter;
  */
 class ReworkCommand extends Command
 {
-    const MAX_ISSUES_PER_QUERY = 100;
+    public const MAX_ISSUES_PER_QUERY = 100;
 
-    protected function configure()
+    protected function configure(): void
     {
         $this
             ->setName('rework')
@@ -42,16 +44,16 @@ class ReworkCommand extends Command
                 'end_time',
                 InputArgument::OPTIONAL,
                 'End time to load the worklog totals (YYYY-mm-dd)',
-                date("Y-m-d")
+                date('Y-m-d')
             )->addOption(
-                'clear_cache', "c",
+                'clear_cache', 'c',
                 InputOption::VALUE_NONE,
                 'Whether or not to clear the cache before starting'
             )->addOption(
-                'output-file', "o",
+                'output-file', 'o',
                 InputOption::VALUE_REQUIRED,
                 'Path to Excel file',
-                __DIR__ . "/../../output/output_" . date("YmdHis") . ".xlsx"
+                __DIR__ . '/../../output/output_' . date('YmdHis') . '.xlsx'
             )->addOption(
                 'authors-whitelist', null,
                 InputOption::VALUE_OPTIONAL,
@@ -64,25 +66,25 @@ class ReworkCommand extends Command
                 'config-file', null,
                 InputOption::VALUE_OPTIONAL,
                 'Path to config file',
-                __DIR__ . "/../../config.json"
+                __DIR__ . '/../../config.json'
             );
     }
 
-    protected function execute(InputInterface $input, OutputInterface $output)
+    protected function execute(InputInterface $input, OutputInterface $output): void
     {
         $start_time = $input->getArgument('start_time');
         $end_time = $input->getArgument('end_time');
-        $start_time_obj = \DateTime::createFromFormat("Y-m-d", $start_time);
-        $end_time_obj = \DateTime::createFromFormat("Y-m-d", $end_time);
-        $start_timestamp = mktime(0, 0, 0, $start_time_obj->format("m"), $start_time_obj->format("d"), $start_time_obj->format("Y"));
-        $end_timestamp = mktime(23, 59, 59, $end_time_obj->format("m"), $end_time_obj->format("d"), $end_time_obj->format("Y"));
+        $start_time_obj = DateTime::createFromFormat('Y-m-d', $start_time);
+        $end_time_obj = DateTime::createFromFormat('Y-m-d', $end_time);
+        $start_timestamp = mktime(0, 0, 0, $start_time_obj->format('m'), $start_time_obj->format('d'), $start_time_obj->format('Y'));
+        $end_timestamp = mktime(23, 59, 59, $end_time_obj->format('m'), $end_time_obj->format('d'), $end_time_obj->format('Y'));
 
-        if (!file_exists($input->getOption("config-file"))) {
-            $output->writeln("<error>Could not find config file at " . $input->getOption("config-file") . "</error>");
+        if (!file_exists($input->getOption('config-file'))) {
+            $output->writeln('<error>Could not find config file at ' . $input->getOption('config-file') . '</error>');
             die();
         }
 
-        $config = json_decode(file_get_contents($input->getOption("config-file")));
+        $config = json_decode(file_get_contents($input->getOption('config-file')), false, 512, JSON_THROW_ON_ERROR);
 
         $cached_client = new CachedHttpClient(new Api\Client\CurlClient());
         $jira = new Api(
@@ -91,7 +93,7 @@ class ReworkCommand extends Command
             $cached_client
         );
 
-        if ($input->getOption("clear_cache")) {
+        if ($input->getOption('clear_cache')) {
             $cached_client->clear();
         }
 
@@ -105,19 +107,19 @@ class ReworkCommand extends Command
 
         do {
 
-            $jql = "worklogDate <= " . $end_time . " and worklogDate >= " . $start_time . " and timespent > 0  and timeSpent < " . rand(1000000, 9000000) . " ";
+            $jql = 'worklogDate <= ' . $end_time . ' and worklogDate >= ' . $start_time . ' and timespent > 0  and timeSpent < ' . random_int(1000000, 9000000) . ' ';
 
-            if ($input->getOption("labels-whitelist")) {
-                $jql .= " and labels in (" . $input->getOption("labels-whitelist") . ")";
+            if ($input->getOption('labels-whitelist')) {
+                $jql .= ' and labels in (' . $input->getOption('labels-whitelist') . ')';
             }
 
-            if ($input->getOption("authors-whitelist")) {
-                $jql .= " and worklogAuthor in (" . $input->getOption("authors-whitelist") . ")";
+            if ($input->getOption('authors-whitelist')) {
+                $jql .= ' and worklogAuthor in (' . $input->getOption('authors-whitelist') . ')';
             }
 
-            $search_result = $jira->search($jql, $offset, self::MAX_ISSUES_PER_QUERY, "key,project,labels,summary,issuelinks");
+            $search_result = $jira->search($jql, $offset, self::MAX_ISSUES_PER_QUERY, 'key,project,labels,summary,issuelinks');
 
-            if ($progress == null) {
+            if ($progress === null) {
                 /** @var ProgressBar $progress */
                 $progress = new ProgressBar($output, $search_result->getTotal());
                 $progress->start();
@@ -133,18 +135,18 @@ class ReworkCommand extends Command
                 $is_rework_of = null;
 
                 // Check if this is rework
-                $linked_isses = $issue->get("Linked Issues");
+                $linked_isses = $issue->get('Linked Issues');
                 if (is_array($linked_isses)) {
                     foreach ($linked_isses as $linked_iss) {
-                        if (isset($linked_iss["inwardIssue"]) && $linked_iss["type"]["inward"] === "is caused by") {
-                            $is_rework_of = $linked_iss["inwardIssue"]["key"];
-                            echo $issue_key . " is " . $linked_iss["type"]["inward"] . " " . $linked_iss["inwardIssue"]["key"] . PHP_EOL;
+                        if (isset($linked_iss['inwardIssue']) && $linked_iss['type']['inward'] === 'is caused by') {
+                            $is_rework_of = $linked_iss['inwardIssue']['key'];
+                            echo $issue_key . ' is ' . $linked_iss['type']['inward'] . ' ' . $linked_iss['inwardIssue']['key'] . PHP_EOL;
                         }
                     }
                 }
 
                 $issue_descriptions[$issue_key] = $issue->getSummary();
-                $issue_labels[$issue_key] = implode(",", $issue->getLabels());
+                $issue_labels[$issue_key] = implode(',', $issue->getLabels());
                 $issue_rework_of[$issue_key] = $is_rework_of;
                 $issue_rework_time[$issue_key] = 0;
                 $issue_total_time[$issue_key] = 0;
@@ -152,20 +154,20 @@ class ReworkCommand extends Command
                 $worklog_result = $jira->getWorklogs($issue_key, []);
 
                 $worklog_array = $worklog_result->getResult();
-                if (isset($worklog_array["worklogs"]) && !empty($worklog_array["worklogs"])) {
-                    foreach ($worklog_array["worklogs"] as $entry) {
-                        $author = $entry["author"]["key"];
+                if (isset($worklog_array['worklogs']) && !empty($worklog_array['worklogs'])) {
+                    foreach ($worklog_array['worklogs'] as $entry) {
+                        $author = $entry['author']['key'];
 
                         // Filter on author
-                        if ($input->getOption("authors-whitelist")) {
-                            $authors_whitelist = explode(",", $input->getOption("authors-whitelist"));
+                        if ($input->getOption('authors-whitelist')) {
+                            $authors_whitelist = explode(',', $input->getOption('authors-whitelist'));
                             if (!in_array($author, $authors_whitelist)) {
                                 continue;
                             }
                         }
 
                         // Filter on time
-                        $worklog_date = \DateTime::createFromFormat("Y-m-d", substr($entry['started'], 0, 10));
+                        $worklog_date = DateTime::createFromFormat('Y-m-d', substr($entry['started'], 0, 10));
                         $worklog_timestamp = $worklog_date->getTimestamp();
 
                         if ($worklog_timestamp < $start_timestamp || $worklog_timestamp > $end_timestamp) {
@@ -173,9 +175,9 @@ class ReworkCommand extends Command
                         }
 
                         if ($is_rework_of) {
-                            $issue_rework_time[$issue_key] += $entry["timeSpentSeconds"] / 60;
+                            $issue_rework_time[$issue_key] += $entry['timeSpentSeconds'] / 60;
                         } else {
-                            $issue_total_time[$issue_key] += $entry["timeSpentSeconds"] / 60;
+                            $issue_total_time[$issue_key] += $entry['timeSpentSeconds'] / 60;
                         }
                     }
                 }
@@ -189,39 +191,34 @@ class ReworkCommand extends Command
         $progress->clear();
 
         if (empty($issue_total_time)) {
-            throw new \Exception("No matching issues found");
+            throw new Exception('No matching issues found');
         }
 
         $writer = new XLSXWriter();
-        $writer->setAuthor("Munisense BV");
+        $writer->setAuthor('Munisense BV');
 
         list($sheet_headers, $sheet_data_by_date) = $this->convertWorkedTimeOfLabelToSheetFormat(array_keys($issue_descriptions), $issue_descriptions, $issue_rework_of, $issue_rework_time, $issue_total_time);
 
-        $writer->writeSheetHeader("sheet1", $sheet_headers);
+        $writer->writeSheetHeader('sheet1', $sheet_headers);
 
-        $totals_row = [""];
+        $totals_row = [''];
         for ($i = 1, $iMax = count($sheet_headers); $i < $iMax; $i++) {
-            $totals_row[] = "=ROUND(SUM(" . XLSXWriter::xlsCell(2, $i) . ":" . XLSXWriter::xlsCell(10000, $i) . ")/60,0)";
+            $totals_row[] = '=ROUND(SUM(' . XLSXWriter::xlsCell(2, $i) . ':' . XLSXWriter::xlsCell(10000, $i) . ')/60,0)';
         }
-        $writer->writeSheetRow("sheet1", $totals_row);
+        $writer->writeSheetRow('sheet1', $totals_row);
 
         foreach ($sheet_data_by_date as $row) {
-            $writer->writeSheetRow("sheet1", $row);
+            $writer->writeSheetRow('sheet1', $row);
         }
 
 
-        $writer->writeToFile($input->getOption("output-file"));
+        $writer->writeToFile($input->getOption('output-file'));
     }
 
-    /**
-     * @param $worked_time_label
-     *
-     * @return array
-     */
-    protected function convertWorkedTimeOfLabelToSheetFormat($issue_keys, $issue_descriptions, $issue_rework_of, $issue_rework_time, $issue_total_time)
+    protected function convertWorkedTimeOfLabelToSheetFormat($issue_keys, $issue_descriptions, $issue_rework_of, $issue_rework_time, $issue_total_time): array
     {
         // Find unique authors per label
-        $sheet_headers = ["Ticket" => "string", "Description" => "string", "CausedBy" => "string", "Rework"  => "string", "Total"  => "string"];
+        $sheet_headers = ['Ticket' => 'string', 'Description' => 'string', 'CausedBy' => 'string', 'Rework' => 'string', 'Total' => 'string'];
 
         $sheet_data_by_date = [];
         foreach ($issue_keys as $key) {

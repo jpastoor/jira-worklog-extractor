@@ -12,14 +12,15 @@
         }
     ],
     "require": {
-        "php": ">=5.5.0",
+        "php": ">=7.3.0",
         "chobie/jira-api-restclient": "dev-master@dev",
-        "symfony/console": "^3.1",
-        "monolog/monolog": "^1.19",
-        "mk-j/php_xlsxwriter": "^0.22"
+        "symfony/console": "~4.4",
+        "monolog/monolog": "~2.0",
+        "mk-j/php_xlsxwriter": "~0.22",
+        "ext-json": "*"
     },
     "require-dev": {
-        "phpunit/phpunit": "5.3.*"
+        "phpunit/phpunit": "~9.0"
     },
     "autoload": {
         "psr-4" : {

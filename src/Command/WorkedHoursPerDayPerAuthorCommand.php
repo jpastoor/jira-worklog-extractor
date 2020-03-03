@@ -4,6 +4,8 @@
 namespace Jpastoor\JiraWorklogExtractor\Command;
 
 use chobie\Jira\Api;
+use DateTime;
+use Exception;
 use Jpastoor\JiraWorklogExtractor\CachedHttpClient;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Helper\ProgressBar;
@@ -25,9 +27,9 @@ use XLSXWriter;
  */
 class WorkedHoursPerDayPerAuthorCommand extends Command
 {
-    const MAX_ISSUES_PER_QUERY = 100;
+    public const MAX_ISSUES_PER_QUERY = 100;
 
-    protected function configure()
+    protected function configure(): void
     {
         $this
             ->setName('worked-hours-per-day-per-author')
@@ -41,16 +43,16 @@ class WorkedHoursPerDayPerAuthorCommand extends Command
                 'end_time',
                 InputArgument::OPTIONAL,
                 'End time to load the worklog totals (YYYY-mm-dd)',
-                date("Y-m-d")
+                date('Y-m-d')
             )->addOption(
-                'clear_cache', "c",
+                'clear_cache', 'c',
                 InputOption::VALUE_NONE,
                 'Whether or not to clear the cache before starting'
             )->addOption(
-                'output-file', "o",
+                'output-file', 'o',
                 InputOption::VALUE_REQUIRED,
                 'Path to Excel file',
-                __DIR__ . "/../../output/output_" . date("YmdHis") . ".xlsx"
+                __DIR__ . '/../../output/output_' . date('YmdHis') . '.xlsx'
             )->addOption(
                 'authors-whitelist', null,
                 InputOption::VALUE_OPTIONAL,
@@ -63,25 +65,25 @@ class WorkedHoursPerDayPerAuthorCommand extends Command
                 'config-file', null,
                 InputOption::VALUE_OPTIONAL,
                 'Path to config file',
-                __DIR__ . "/../../config.json"
+                __DIR__ . '/../../config.json'
             );
     }
 
-    protected function execute(InputInterface $input, OutputInterface $output)
+    protected function execute(InputInterface $input, OutputInterface $output): void
     {
         $start_time = $input->getArgument('start_time');
         $end_time = $input->getArgument('end_time');
-        $start_time_obj = \DateTime::createFromFormat("Y-m-d", $start_time);
-        $end_time_obj = \DateTime::createFromFormat("Y-m-d", $end_time);
-        $start_timestamp = mktime(0, 0, 0, $start_time_obj->format("m"), $start_time_obj->format("d"), $start_time_obj->format("Y"));
-        $end_timestamp = mktime(23, 59, 59, $end_time_obj->format("m"), $end_time_obj->format("d"), $end_time_obj->format("Y"));
+        $start_time_obj = DateTime::createFromFormat('Y-m-d', $start_time);
+        $end_time_obj = DateTime::createFromFormat('Y-m-d', $end_time);
+        $start_timestamp = mktime(0, 0, 0, $start_time_obj->format('m'), $start_time_obj->format('d'), $start_time_obj->format('Y'));
+        $end_timestamp = mktime(23, 59, 59, $end_time_obj->format('m'), $end_time_obj->format('d'), $end_time_obj->format('Y'));
 
-        if (!file_exists($input->getOption("config-file"))) {
-            $output->writeln("<error>Could not find config file at " . $input->getOption("config-file") . "</error>");
+        if (!file_exists($input->getOption('config-file'))) {
+            $output->writeln('<error>Could not find config file at ' . $input->getOption('config-file') . '</error>');
             die();
         }
 
-        $config = json_decode(file_get_contents($input->getOption("config-file")));
+        $config = json_decode(file_get_contents($input->getOption('config-file')), false, 512, JSON_THROW_ON_ERROR);
 
         $cached_client = new CachedHttpClient(new Api\Client\CurlClient());
         $jira = new Api(
@@ -90,7 +92,7 @@ class WorkedHoursPerDayPerAuthorCommand extends Command
             $cached_client
         );
 
-        if ($input->getOption("clear_cache")) {
+        if ($input->getOption('clear_cache')) {
             $cached_client->clear();
         }
 
@@ -101,19 +103,19 @@ class WorkedHoursPerDayPerAuthorCommand extends Command
 
         do {
 
-            $jql = "worklogDate <= " . $end_time . " and worklogDate >= " . $start_time . " and timespent > 0  and timeSpent < " . rand(1000000, 9000000) . " ";
+            $jql = 'worklogDate <= ' . $end_time . ' and worklogDate >= ' . $start_time . ' and timespent > 0  and timeSpent < ' . random_int(1000000, 9000000) . ' ';
 
-            if ($input->getOption("labels-whitelist")) {
-                $jql .= " and labels in (" . $input->getOption("labels-whitelist") . ")";
+            if ($input->getOption('labels-whitelist')) {
+                $jql .= ' and labels in (' . $input->getOption('labels-whitelist') . ')';
             }
 
-            if ($input->getOption("authors-whitelist")) {
-                $jql .= " and worklogAuthor in (" . $input->getOption("authors-whitelist") . ")";
+            if ($input->getOption('authors-whitelist')) {
+                $jql .= ' and worklogAuthor in (' . $input->getOption('authors-whitelist') . ')';
             }
 
-            $search_result = $jira->search($jql, $offset, self::MAX_ISSUES_PER_QUERY, "key,project,labels");
+            $search_result = $jira->search($jql, $offset, self::MAX_ISSUES_PER_QUERY, 'key,project,labels');
 
-            if ($progress == null) {
+            if ($progress === null) {
                 /** @var ProgressBar $progress */
                 $progress = new ProgressBar($output, $search_result->getTotal());
                 $progress->start();
@@ -126,27 +128,27 @@ class WorkedHoursPerDayPerAuthorCommand extends Command
                 $worklog_result = $jira->getWorklogs($issue->getKey(), []);
 
                 $worklog_array = $worklog_result->getResult();
-                if (isset($worklog_array["worklogs"]) && !empty($worklog_array["worklogs"])) {
-                    foreach ($worklog_array["worklogs"] as $entry) {
-                        $author = $entry["author"]["key"];
+                if (isset($worklog_array['worklogs']) && !empty($worklog_array['worklogs'])) {
+                    foreach ($worklog_array['worklogs'] as $entry) {
+                        $author = $entry['author']['key'];
 
                         // Filter on author
-                        if ($input->getOption("authors-whitelist")) {
-                            $authors_whitelist = explode(",", $input->getOption("authors-whitelist"));
-                            if (!in_array($author, $authors_whitelist)) {
+                        if ($input->getOption('authors-whitelist')) {
+                            $authors_whitelist = explode(',', $input->getOption('authors-whitelist'));
+                            if (!in_array($author, $authors_whitelist, true)) {
                                 continue;
                             }
                         }
 
                         // Filter on time
-                        $worklog_date = \DateTime::createFromFormat("Y-m-d", substr($entry['started'], 0, 10));
+                        $worklog_date = DateTime::createFromFormat('Y-m-d', substr($entry['started'], 0, 10));
                         $worklog_timestamp = $worklog_date->getTimestamp();
 
                         if ($worklog_timestamp < $start_timestamp || $worklog_timestamp > $end_timestamp) {
                             continue;
                         }
 
-                        @$worked_time[$author][$worklog_date->format("Y-m-d")] += $entry["timeSpentSeconds"] / 60;
+                        @$worked_time[$author][$worklog_date->format('Y-m-d')] += $entry['timeSpentSeconds'] / 60;
                     }
                 }
                 $progress->advance();
@@ -159,20 +161,20 @@ class WorkedHoursPerDayPerAuthorCommand extends Command
         $progress->clear();
 
         if (empty($worked_time)) {
-            throw new \Exception("No matching issues found");
+            throw new Exception('No matching issues found');
         }
 
         $writer = new XLSXWriter();
-        $writer->setAuthor("Munisense BV");
+        $writer->setAuthor('Munisense BV');
 
         ksort($worked_time);
 
         // Fill in empty days
-        foreach($worked_time as $author => $worked_time_per_author) {
+        foreach ($worked_time as $author => $worked_time_per_author) {
             $current_day_start = $start_timestamp;
             while ($current_day_start <= $end_timestamp) {
-                $date = date("Y-m-d", $current_day_start);
-                if(!isset($worked_time[$author][$date])) {
+                $date = date('Y-m-d', $current_day_start);
+                if (!isset($worked_time[$author][$date])) {
                     $worked_time[$author][$date] = 0;
                 }
                 $current_day_start += 86400;
@@ -181,20 +183,21 @@ class WorkedHoursPerDayPerAuthorCommand extends Command
 
         list($sheet_headers, $sheet_data_by_date) = $this->convertWorkedTimeOfLabelToSheetFormat($worked_time);
 
-        $writer->writeSheetHeader("sheet1", $sheet_headers);
+        $writer->writeSheetHeader('sheet1', $sheet_headers);
 
-        $totals_row = [""];
-        for ($i = 1; $i < count($sheet_headers); $i++) {
-            $totals_row[] = "=ROUND(SUM(" . XLSXWriter::xlsCell(2, $i) . ":" . XLSXWriter::xlsCell(10000, $i) . ")/60,0)";
+        $totals_row = [''];
+        $sheet_header_count = count($sheet_headers);
+        for ($i = 1; $i < $sheet_header_count; $i++) {
+            $totals_row[] = '=ROUND(SUM(' . XLSXWriter::xlsCell(2, $i) . ':' . XLSXWriter::xlsCell(10000, $i) . ')/60,0)';
         }
-        $writer->writeSheetRow("sheet1", $totals_row);
+        $writer->writeSheetRow('sheet1', $totals_row);
 
         foreach ($sheet_data_by_date as $row) {
-            $writer->writeSheetRow("sheet1", $row);
+            $writer->writeSheetRow('sheet1', $row);
         }
 
 
-        $writer->writeToFile($input->getOption("output-file"));
+        $writer->writeToFile($input->getOption('output-file'));
     }
 
     /**
@@ -202,13 +205,13 @@ class WorkedHoursPerDayPerAuthorCommand extends Command
      *
      * @return array
      */
-    protected function convertWorkedTimeOfLabelToSheetFormat($worked_time_label)
+    protected function convertWorkedTimeOfLabelToSheetFormat($worked_time_label): array
     {
         // Find unique authors per label
         $unique_authors = array_keys($worked_time_label);
-        $sheet_headers = ["Date" => "date"];
+        $sheet_headers = ['Date' => 'date'];
         foreach ($unique_authors as $unique_author) {
-            $sheet_headers[$unique_author] = "integer";
+            $sheet_headers[$unique_author] = 'integer';
         }
         $unique_authors_map = array_flip($unique_authors);
 

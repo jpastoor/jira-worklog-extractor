@@ -4,6 +4,7 @@
 namespace Jpastoor\JiraWorklogExtractor\Command;
 
 use chobie\Jira\Api;
+use DateTime;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Helper\ProgressBar;
 use Symfony\Component\Console\Input\InputArgument;
@@ -19,9 +20,9 @@ use Symfony\Component\Console\Output\OutputInterface;
  */
 class LoadProjectTotalsInTimeperiodCommand extends Command
 {
-    const MAX_ISSUES_PER_QUERY = 100;
+    public const MAX_ISSUES_PER_QUERY = 100;
 
-    protected function configure()
+    protected function configure(): void
     {
         $this
             ->setName('load-project-totals')
@@ -35,7 +36,7 @@ class LoadProjectTotalsInTimeperiodCommand extends Command
                 'end_time',
                 InputArgument::OPTIONAL,
                 'End time to load the worklog totals (YYYY-mm-dd)',
-                date("Y-m-d")
+                date('Y-m-d')
             )->addOption(
                 'output_file', null,
                 InputArgument::OPTIONAL,
@@ -44,25 +45,25 @@ class LoadProjectTotalsInTimeperiodCommand extends Command
                 'config_file', null,
                 InputArgument::OPTIONAL,
                 'Path to config file',
-                __DIR__ . "/../../config.json"
+                __DIR__ . '/../../config.json'
             );
     }
 
-    protected function execute(InputInterface $input, OutputInterface $output)
+    protected function execute(InputInterface $input, OutputInterface $output): void
     {
         $start_time = $input->getArgument('start_time');
         $end_time = $input->getArgument('end_time');
-        $start_time_obj = \DateTime::createFromFormat("Y-m-d", $start_time);
-        $end_time_obj = \DateTime::createFromFormat("Y-m-d", $end_time);
-        $start_timestamp = mktime(0, 0, 0, $start_time_obj->format("m"), $start_time_obj->format("d"), $start_time_obj->format("Y"));
-        $end_timestamp = mktime(23, 59, 59, $end_time_obj->format("m"), $end_time_obj->format("d"), $end_time_obj->format("Y"));
+        $start_time_obj = DateTime::createFromFormat('Y-m-d', $start_time);
+        $end_time_obj = DateTime::createFromFormat('Y-m-d', $end_time);
+        $start_timestamp = mktime(0, 0, 0, $start_time_obj->format('m'), $start_time_obj->format('d'), $start_time_obj->format('Y'));
+        $end_timestamp = mktime(23, 59, 59, $end_time_obj->format('m'), $end_time_obj->format('d'), $end_time_obj->format('Y'));
 
-        if (!file_exists($input->getOption("config_file"))) {
-            $output->writeln("<error>Could not find config file at " . $input->getOption("config_file") . "</error>");
+        if (!file_exists($input->getOption('config_file'))) {
+            $output->writeln('<error>Could not find config file at ' . $input->getOption('config_file') . '</error>');
             die();
         }
 
-        $config = json_decode(file_get_contents($input->getOption("config_file")));
+        $config = json_decode(file_get_contents($input->getOption('config_file')), false, 512, JSON_THROW_ON_ERROR);
 
         $jira = new Api($config->jira->endpoint, new Api\Authentication\Basic($config->jira->user, $config->jira->password));
 
@@ -73,9 +74,9 @@ class LoadProjectTotalsInTimeperiodCommand extends Command
 
         do {
 
-            $search_result = $jira->search("worklogDate <= " . $end_time . " and worklogDate >= " . $start_time . " and timespent > 0", $offset, self::MAX_ISSUES_PER_QUERY, "key,project");
+            $search_result = $jira->search('worklogDate <= ' . $end_time . ' and worklogDate >= ' . $start_time . ' and timespent > 0', $offset, self::MAX_ISSUES_PER_QUERY, 'key,project');
 
-            if ($progress == null) {
+            if ($progress === null) {
                 /** @var ProgressBar $progress */
                 $progress = new ProgressBar($output, $search_result->getTotal());
                 $progress->start();
@@ -87,20 +88,21 @@ class LoadProjectTotalsInTimeperiodCommand extends Command
                 $worklog_result = $jira->getWorklogs($issue->getKey(), []);
 
                 $worklog_array = $worklog_result->getResult();
-                if (isset($worklog_array["worklogs"]) && !empty($worklog_array["worklogs"])) {
-                    foreach ($worklog_array["worklogs"] as $entry) {
+                if (isset($worklog_array['worklogs']) && !empty($worklog_array['worklogs'])) {
+                    foreach ($worklog_array['worklogs'] as $entry) {
 
                         // Filter on time
-                        $worklog_date = \DateTime::createFromFormat("Y-m-d", substr($entry['started'], 0, 10));
+                        $worklog_date = DateTime::createFromFormat('Y-m-d', substr($entry['started'], 0, 10));
                         $worklog_timestamp = $worklog_date->getTimestamp();
 
                         if ($worklog_timestamp < $start_timestamp || $worklog_timestamp > $end_timestamp) {
                             continue;
                         }
 
-                        @$worked_time[$issue->getProject()["key"]][$entry["author"]["key"]] += $entry["timeSpentSeconds"];
+                        @$worked_time[$issue->getProject()['key']][$entry['author']['key']] += $entry['timeSpentSeconds'];
                     }
                 }
+
                 $progress->advance();
             }
 
@@ -119,9 +121,9 @@ class LoadProjectTotalsInTimeperiodCommand extends Command
             $authors = array_unique(array_merge($authors, array_keys($worked_time_per_project)));
         }
 
-        $output->writeln("");
+        $output->writeln('');
 
-        $output_lines[] = "project;" . implode(";", $authors);
+        $output_lines[] = 'project;' . implode(';', $authors);
 
         foreach ($projects as $project) {
 
@@ -131,17 +133,17 @@ class LoadProjectTotalsInTimeperiodCommand extends Command
                 $hours_per_author[$author] = isset($worked_time[$project][$author]) ? round($worked_time[$project][$author] / 60 / 60) : 0;
             }
 
-            $output_lines[] = $project . ";" . implode(";", $hours_per_author);
+            $output_lines[] = $project . ';' . implode(';', $hours_per_author);
         }
 
 
-        if ($input->getOption("output_file")) {
-            $output_file = $input->getOption("output_file");
+        if ($input->getOption('output_file')) {
+            $output_file = $input->getOption('output_file');
 
             if (file_put_contents($output_file, implode(PHP_EOL, $output_lines))) {
-                $output->writeln("<info>Output written to " . $output_file . "</info>");
+                $output->writeln('<info>Output written to ' . $output_file . '</info>');
             } else {
-                $output->writeln("<error>Could not write to " . $output_file . "</error>");
+                $output->writeln('<error>Could not write to ' . $output_file . '</error>');
             }
         } else {
             // Default output mode to console

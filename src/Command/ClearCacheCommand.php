@@ -18,17 +18,17 @@ use Symfony\Component\Console\Output\OutputInterface;
  */
 class ClearCacheCommand extends Command
 {
-    protected function configure()
+    protected function configure(): void
     {
         $this
             ->setName('cache:clear')
             ->setDescription('Clears the JIRA cache');
     }
 
-    protected function execute(InputInterface $input, OutputInterface $output)
+    protected function execute(InputInterface $input, OutputInterface $output): void
     {
         $cache = new CachedHttpClient(new Api\Client\CurlClient());
         $i = $cache->clear();
-        $output->writeln("Removed " . $i . " cache files");
+        $output->writeln('Removed ' . $i . ' cache files');
     }
 }
