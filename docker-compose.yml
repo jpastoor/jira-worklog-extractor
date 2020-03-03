@@ -1,0 +1,9 @@
+version: '3.5'
+services:
+  php-cli:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    working_dir: /opt/project
+    volumes:
+      - .:/opt/project

@@ -5,22 +5,26 @@ this little tool to help with it.
 
 Currently outputs a CSV table with the projects on the rows, authors on the columns and worked hours in the cells.
 
-# Usage
+## Usage with docker
+Make sure you have docker and docker-compose installed on your machine.
 
+Clone or download the source code and install dependencies
 ```
-composer require jpastoor/jira-worklog-extractor dev-master@dev
+git clone https://github.com/jpastoor/jira-worklog-extractor.git
+cd jira-worklog-extractor
+docker-compose run php-cli composer install --prefer-dist
 ```
 
 Copy the config.json.template to config.json and alter the values.
 
-To run it:
-````bash
-php app.php load-project-totals 2016-01-01 2016-03-31
-````
+Then you can run the commands using:
+```
+docker-compose run php-cli php app.php
+```
 
 Example command:
 ````bash
-php app.php load-project-totals 2016-01-01 2016-03-31
+docker-compose run php-cli php  app.php load-project-totals 2016-01-01 2016-03-31
 ````
 
 Example output:
